@@ -1,6 +1,8 @@
 #!/usr/bin/env luajit
 
 local bit = require("bit")
+local ffi = require("ffi")
+
 
 local proto = {}
 
@@ -37,8 +39,24 @@ function proto.fromVarint(buff, index)
     return result, current
 end
 
+ffi.cdef[[
+union bar { uint8_t b[8]; double d; };
+]]
+
 --- return 8-byte string with same memory layout from double "d"
-function proto.double(d)
+function proto.toDouble(dbl)
+    local u = ffi.new("union bar", {d=dbl})
+    local v = u.b
+    return string.char(v[0], v[1], v[2], v[3], 
+                       v[4], v[5], v[6], v[7])
+end
+
+function proto.fromDouble(buff, index)
+    assert(index+7 <= #buff)
+    local u = ffi.new("union bar")
+    local v = u.b
+    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7] = string.byte(buff, index, index+7)
+    return u.d, index+8
 end
 
 -- return tag, wire type
@@ -89,6 +107,7 @@ function proto.test()
         u32  = 3,
         u64  = 4,
         boolean = true,
+        dbl  = 123.456789,
     }
     -- name : tag
     local testProto = 
@@ -100,6 +119,7 @@ function proto.test()
         u64     = 500000,
         boolean = 600000,
         u32s    = 8,
+        dbl     = 101,
     }
     local buff = proto.serialize(testData, testProto)
     local f =io.open("test_output", "w")
@@ -118,6 +138,8 @@ function proto.test()
                 assert(name)
                 assert(tostring(testData[name]) == value) 
             end
+            -- TODO: handle double like below:
+            -- 101: 0x405edd3c07ee0b0b 
         end
     end
     output:close()
@@ -152,6 +174,33 @@ function proto.test()
         return true
     end
     assert(compareTable(r2, testData), "the parsed table is different than original one")
+    print("pass")
+
+    -- test double
+    function testDouble(dbl, ...)
+        local buf = proto.toDouble(dbl)
+        local str = string.char(...)
+        if buf ~= str then
+            print("expected:")
+            print(string.format("proto.toDouble %f -> %s", dbl, table.concat({...}, ",")))
+            print("result:")
+            print(string.format("proto.toDouble %f -> %s", dbl, table.concat({string.byte(buf,1,#buf)} , ",")))
+            return false
+        end
+       
+        local value = proto.fromDouble(str, 1)
+        if value ~= dbl then
+            print("expected:")
+            print(string.format("proto.fromDouble %s -> %f", table.concat({...}, ","), dbl))
+            print("result:")
+            print(string.format("proto.fromDouble %s -> %f", table.concat({string.byte(buf,1,#buf)} , ","), dbl))
+            return false
+        end
+        return true
+    end
+    assert(testDouble(1.1, 154, 153, 153, 153, 153, 153, 241, 63))
+    assert(testDouble(123.456789, 11, 11, 238, 7, 60, 221, 94, 64))
+    assert(testDouble(0, 0, 0, 0, 0, 0, 0, 0, 0))
     print("pass")
 end
 
@@ -191,10 +240,9 @@ function proto.serialize(tbl, prt)
                 value = proto.toVarint(v)
             else
                 -- double
-                key = bit.bor(bit.lshift(tag, 3), 2)
+                key = bit.bor(bit.lshift(tag, 3), 1)
                 key = proto.toVarint(key)
-                -- TODO, seiralize 8-byte double to 8-byte string
-                value = v
+                value = proto.toDouble(v) 
             end
         elseif t == "boolean" then
             key = bit.bor(bit.lshift(tag, 3), 0)
@@ -224,7 +272,7 @@ function proto.parse(str, prt)
         if wire_type == 0 then
             value, index = proto.fromVarint(str, index)
         elseif wire_type == 1 then
-            -- TODO, double
+            value, index = proto.fromDouble(str, index) 
         elseif wire_type == 2 then
             local len
             len, index = proto.fromVarint(str, index)
