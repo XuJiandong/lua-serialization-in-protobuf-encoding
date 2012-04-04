@@ -9,7 +9,6 @@ function proto.toVarint(i)
     assert(math.fmod(i, 1) == 0)
     local result = {}
 
-    local more = false
     while true do
         local b = bit.band(i, 0x7F)
         i = bit.rshift(i, 7)
@@ -25,7 +24,7 @@ end
 
 -- return value and next index
 function proto.fromVarint(buff, index)
-    assert(index > 0)
+    assert(type(buff) == "string" and index > 0)
     local result = 0;
     local current = index
     while true do
@@ -159,8 +158,8 @@ end
 
 
 -- tbl: table value to be serialized
--- prt: protobuf 
--- return: a string value with serialized value
+-- prt: protobuf description table
+-- return: a string with serialized value
 -- 
 -- detailed mapping
 -- lua type |  prontobuf type
@@ -171,6 +170,7 @@ end
 -- note, there is no "int" in lua, 
 -- only when math.fmod(x, 1) == 0
 function proto.serialize(tbl, prt)
+    assert(tbl and prt)
     local result = {}
     for k, v in pairs(tbl) do
         local t = type(v)
@@ -224,7 +224,7 @@ function proto.parse(str, prt)
         if wire_type == 0 then
             value, index = proto.fromVarint(str, index)
         elseif wire_type == 1 then
-            -- TODO
+            -- TODO, double
         elseif wire_type == 2 then
             local len
             len, index = proto.fromVarint(str, index)
