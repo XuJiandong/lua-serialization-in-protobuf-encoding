@@ -7,7 +7,7 @@ local ffi = require("ffi")
 local proto = {}
 
 -- return base 128 varint string
-function proto.toVarint(i)
+function proto.serializeVarint(i)
     assert(math.fmod(i, 1) == 0)
     local result = {}
 
@@ -25,7 +25,7 @@ function proto.toVarint(i)
 end
 
 -- return value and next index
-function proto.fromVarint(buff, index)
+function proto.parseVarint(buff, index)
     assert(type(buff) == "string" and index > 0)
     local result = 0;
     local current = index
@@ -44,14 +44,14 @@ union bar { uint8_t b[8]; double d; };
 ]]
 
 --- return 8-byte string with same memory layout from double "d"
-function proto.toDouble(dbl)
+function proto.serializeDouble(dbl)
     local u = ffi.new("union bar", {d=dbl})
     local v = u.b
     return string.char(v[0], v[1], v[2], v[3], 
                        v[4], v[5], v[6], v[7])
 end
 
-function proto.fromDouble(buff, index)
+function proto.parseDouble(buff, index)
     assert(index+7 <= #buff)
     local u = ffi.new("union bar")
     local v = u.b
@@ -76,7 +76,7 @@ end
 function proto.test()
     function testToVarint(i, ...)
         local str = string.char(...)
-        local v = proto.toVarint(i)
+        local v = proto.serializeVarint(i)
         if str ~= v then
             local s1 = table.concat({...}, ",")
             local s2 = table.concat({string.byte(v)}, ",")
@@ -85,7 +85,7 @@ function proto.test()
             print("pass")
         end
 
-        local v, index = proto.fromVarint(string.char(...), 1)
+        local v, index = proto.parseVarint(string.char(...), 1)
         if i ~= v or index ~= (#str+1) then
             local s = table.concat({...}, ",")
             print(string.format("%s expected %d but get %d", s, i, v))
@@ -178,22 +178,22 @@ function proto.test()
 
     -- test double
     function testDouble(dbl, ...)
-        local buf = proto.toDouble(dbl)
+        local buf = proto.serializeDouble(dbl)
         local str = string.char(...)
         if buf ~= str then
             print("expected:")
-            print(string.format("proto.toDouble %f -> %s", dbl, table.concat({...}, ",")))
+            print(string.format("proto.serializeDouble %f -> %s", dbl, table.concat({...}, ",")))
             print("result:")
-            print(string.format("proto.toDouble %f -> %s", dbl, table.concat({string.byte(buf,1,#buf)} , ",")))
+            print(string.format("proto.serializeDouble %f -> %s", dbl, table.concat({string.byte(buf,1,#buf)} , ",")))
             return false
         end
        
-        local value = proto.fromDouble(str, 1)
+        local value = proto.parseDouble(str, 1)
         if value ~= dbl then
             print("expected:")
-            print(string.format("proto.fromDouble %s -> %f", table.concat({...}, ","), dbl))
+            print(string.format("proto.parseDouble %s -> %f", table.concat({...}, ","), dbl))
             print("result:")
-            print(string.format("proto.fromDouble %s -> %f", table.concat({string.byte(buf,1,#buf)} , ","), dbl))
+            print(string.format("proto.parseDouble %s -> %f", table.concat({string.byte(buf,1,#buf)} , ","), dbl))
             return false
         end
         return true
@@ -230,24 +230,24 @@ function proto.serialize(tbl, prt)
         local key, value
         if t == "string" then
             key = bit.bor(bit.lshift(tag, 3), 2)
-            key = proto.toVarint(key)
-            value = proto.toVarint(#v) .. v 
+            key = proto.serializeVarint(key)
+            value = proto.serializeVarint(#v) .. v 
         elseif t == "number" then
            if math.fmod(v, 1) == 0 then
                 -- varint
                 key = bit.bor(bit.lshift(tag, 3), 0)
-                key = proto.toVarint(key)
-                value = proto.toVarint(v)
+                key = proto.serializeVarint(key)
+                value = proto.serializeVarint(v)
             else
                 -- double
                 key = bit.bor(bit.lshift(tag, 3), 1)
-                key = proto.toVarint(key)
-                value = proto.toDouble(v) 
+                key = proto.serializeVarint(key)
+                value = proto.serializeDouble(v) 
             end
         elseif t == "boolean" then
             key = bit.bor(bit.lshift(tag, 3), 0)
-            key = proto.toVarint(key)
-            value = proto.toVarint(1)
+            key = proto.serializeVarint(key)
+            value = proto.serializeVarint(1)
         else
             assert(false, "can't support " .. t)
         end
@@ -265,17 +265,17 @@ function proto.parse(str, prt)
     local index = 1
     while index <= len do
         local key 
-        key, index = proto.fromVarint(str, index)
+        key, index = proto.parseVarint(str, index)
         local tag, wire_type = proto.extractKey(key)
 
         local value
         if wire_type == 0 then
-            value, index = proto.fromVarint(str, index)
+            value, index = proto.parseVarint(str, index)
         elseif wire_type == 1 then
-            value, index = proto.fromDouble(str, index) 
+            value, index = proto.parseDouble(str, index) 
         elseif wire_type == 2 then
             local len
-            len, index = proto.fromVarint(str, index)
+            len, index = proto.parseVarint(str, index)
             value = string.sub(str, index, index+len-1)
             index = index + len
         else
