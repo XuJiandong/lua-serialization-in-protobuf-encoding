@@ -1,6 +1,4 @@
 
-- type "double" can't be serialized without C/C++
-- now require luajit, remove this depedency.
 - support lua array
 - support lua nested table
 
