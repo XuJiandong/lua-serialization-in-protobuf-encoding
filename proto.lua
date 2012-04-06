@@ -74,12 +74,12 @@ end
 
 
 function proto.test()
-    function testToVarint(i, ...)
+    function testSerializeVarint(i, ...)
         local str = string.char(...)
         local v = proto.serializeVarint(i)
         if str ~= v then
             local s1 = table.concat({...}, ",")
-            local s2 = table.concat({string.byte(v)}, ",")
+            local s2 = table.concat({string.byte(v, 1, #v)}, ",")
             print(string.format("%d expected %s but get %s", i, s1, s2))
         else
             print("pass")
@@ -93,11 +93,13 @@ function proto.test()
             print("pass")
         end
     end
-    testToVarint(1, 1)
-    testToVarint(2, 2)
-    testToVarint(128, 128, 1)
-    testToVarint(300, 0xAC, 0x02)
-    testToVarint(150, 0x96, 0x01)
+    testSerializeVarint(1, 1)
+    testSerializeVarint(2, 2)
+    testSerializeVarint(128, 128, 1)
+    testSerializeVarint(300, 0xAC, 0x02)
+    testSerializeVarint(150, 0x96, 0x01)
+    testSerializeVarint(-1, 255, 255, 255, 255, 15)
+    testSerializeVarint(-2, 254, 255, 255, 255, 15)
 
     local testData =
     {
@@ -108,6 +110,7 @@ function proto.test()
         u64  = 4,
         boolean = true,
         dbl  = 123.456789,
+        minus= -100,
     }
     -- name : tag
     local testProto = 
@@ -120,6 +123,7 @@ function proto.test()
         boolean = 600000,
         u32s    = 8,
         dbl     = 101,
+        minus   = 102,
     }
     local buff = proto.serialize(testData, testProto)
     local f =io.open("test_output", "w")
@@ -128,18 +132,31 @@ function proto.test()
 
     local output = io.popen("cat test_output | protoc --decode_raw", "r")
     for line in output:lines() do
-        -- try matching like 500000: 4
-        local tag, value = line:match("(%d+):%s*(%d+)")
+        -- try matching like 101: 0x405edd3c07ee0b0b 
+        local tag, value = line:match("(%d+):%s*0x(%x+)")
+        if tag and value then
+            local hex, n = value:gsub("%x%x", function (h) print(h) return tonumber(h, 16) end) 
+            local v1, v2, v3, v4, v5, v6, v7, v8 = string.byte(hex, 1, #hex)
+            hex = string.char(v8, v7, v6, v5, v4, v3, v2, v1)
+            value = proto.parseDouble(hex, 1)
+        end
+        if not tag or not value then
+            -- try matching like 500000: 4
+            tag, value = line:match("(%d+):%s*(%d+)")
+        end
         if not tag or not value then
             -- try matching like 1: "this is name"
             tag, value = line:match("(%d+):%s*\"(.+)\"")
-            if tag and value then
-                local name = proto.findName(tonumber(tag), testProto)
-                assert(name)
-                assert(tostring(testData[name]) == value) 
+        end
+       if tag and value then
+            local name = proto.findName(tonumber(tag), testProto)
+            assert(name)
+            -- boolean
+            if type(testData[name]) == "boolean" then testData[name] = 1 end
+            if tostring(testData[name]) ~= value then
+                print(string.format("expected: testData[%q] -> ", name) .. tostring(value))
+                print(string.format("actually: testData[%q] -> ", name) .. tostring(testData[name]))
             end
-            -- TODO: handle double like below:
-            -- 101: 0x405edd3c07ee0b0b 
         end
     end
     output:close()
