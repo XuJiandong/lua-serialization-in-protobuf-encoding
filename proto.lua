@@ -133,30 +133,40 @@ function proto.test()
     local output = io.popen("cat test_output | protoc --decode_raw", "r")
     for line in output:lines() do
         -- try matching like 101: 0x405edd3c07ee0b0b 
-        local tag, value = line:match("(%d+):%s*0x(%x+)")
+        local tag, value = line:match("(%d+):%s*0x(%x+)$")
         if tag and value then
-            local hex, n = value:gsub("%x%x", function (h) print(h) return tonumber(h, 16) end) 
-            local v1, v2, v3, v4, v5, v6, v7, v8 = string.byte(hex, 1, #hex)
-            hex = string.char(v8, v7, v6, v5, v4, v3, v2, v1)
+            local hex = {}
+            value:gsub("%x%x", function (h) 
+                table.insert(hex, tonumber(h, 16)) 
+            end) 
+            hex = string.char(hex[8], hex[7], hex[6], hex[5],
+                            hex[4], hex[3], hex[2], hex[1])
             value = proto.parseDouble(hex, 1)
         end
         if not tag or not value then
             -- try matching like 500000: 4
-            tag, value = line:match("(%d+):%s*(%d+)")
+            tag, value = line:match("(%d+):%s*(%d+)$")
         end
         if not tag or not value then
             -- try matching like 1: "this is name"
             tag, value = line:match("(%d+):%s*\"(.+)\"")
         end
-       if tag and value then
+        if tag and value then
             local name = proto.findName(tonumber(tag), testProto)
             assert(name)
+            local testValue = testData[name]
             -- boolean
-            if type(testData[name]) == "boolean" then testData[name] = 1 end
-            if tostring(testData[name]) ~= value then
+            if type(testData[name]) == "boolean" then testValue = 1 end
+            -- nagative number
+            if type(testData[name]) == "number" and testData[name] < 0 then
+                testValue = 0xFFFFFFFF + testData[name] + 1
+            end
+            if tostring(testValue) ~= tostring(value) then
                 print(string.format("expected: testData[%q] -> ", name) .. tostring(value))
                 print(string.format("actually: testData[%q] -> ", name) .. tostring(testData[name]))
             end
+        else
+            assert(false, "can't match " .. line)
         end
     end
     output:close()
