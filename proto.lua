@@ -1,7 +1,5 @@
 #!/usr/bin/env luajit
 
-module ("lua_serialization_protobuf", package.seeall)
-
 local bit = require("bit")
 local ffi = require("ffi")
 
