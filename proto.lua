@@ -1,8 +1,9 @@
 #!/usr/bin/env luajit
 
+module ("lua_serialization_protobuf", package.seeall)
+
 local bit = require("bit")
 local ffi = require("ffi")
-
 
 local proto = {}
 
@@ -292,9 +293,4 @@ function proto.parse(str, prt)
     return result
 end
 
-
-if arg ~= nil then
-    proto.test()
-else
-    return proto
-end
+return proto
