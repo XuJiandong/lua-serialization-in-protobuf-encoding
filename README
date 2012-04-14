@@ -1,6 +1,6 @@
 using the following encoding:
 https://developers.google.com/protocol-buffers/docs/encoding
-to serialize lua table. 
+to serialize lua table. Under the MIT license.
 
 Under construction.
 
